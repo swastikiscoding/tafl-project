@@ -5,13 +5,13 @@
   const GW = 800, GH = 520, MARGIN = 90;
 
   const COLORS = {
-    bg: '#221f18', nodeFill: '#221f18', nodeStroke: '#5e5545',
-    startStroke: '#e8964a', acceptStroke: '#7dcc6a',
-    currentStroke: '#f5c842', currentFill: 'rgba(245,200,66,0.14)',
-    deadStroke: '#e87461', deadFill: 'rgba(232,116,97,0.10)',
-    edge: '#6e6352', edgeHl: '#f5c842', labelBg: '#1a1712',
-    text: '#ece4d8', textMuted: '#9a8e7c', textDim: '#6e6352',
-    startArrow: '#e8964a'
+    bg: '#2B2621', nodeFill: '#221F1B', nodeStroke: '#4F453A',
+    startStroke: '#E07A46', acceptStroke: '#6DA368',
+    currentStroke: '#E2AD48', currentFill: '#352A16',
+    deadStroke: '#C7625B', deadFill: '#3E1E1C',
+    edge: '#7D7569', edgeHl: '#E2AD48', labelBg: '#221F1B',
+    text: '#F2EFE9', textMuted: '#A8A196', textDim: '#7D7569',
+    startArrow: '#E07A46'
   };
 
   // ==================== EXAMPLES ====================
