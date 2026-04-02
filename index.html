@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NFA to DFA Converter - Subset Construction Visualizer</title>
+  <meta name="description" content="Interactive tool to visualize the subset construction method for converting NFA to DFA step by step.">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>NFA to DFA Converter</h1>
+    <p class="subtitle">Subset Construction Method -- Step-by-Step Visualization</p>
+  </header>
+
+  <main>
+    <!-- Input Section -->
+    <section class="input-section" id="inputSection">
+      <div class="input-header">
+        <h2>Define NFA</h2>
+        <div class="example-buttons">
+          <button class="btn btn-ghost" onclick="app.loadExample(0)">Example 1: Ends with ab</button>
+          <button class="btn btn-ghost" onclick="app.loadExample(1)">Example 2: Epsilon NFA</button>
+          <button class="btn btn-ghost" onclick="app.loadExample(2)">Example 3: Contains aa</button>
+        </div>
+      </div>
+
+      <div class="input-grid">
+        <div class="input-group">
+          <label for="statesInput">States <span class="hint">(comma-separated)</span></label>
+          <input type="text" id="statesInput" placeholder="q0, q1, q2">
+        </div>
+        <div class="input-group">
+          <label for="alphabetInput">Alphabet <span class="hint">(comma-separated)</span></label>
+          <input type="text" id="alphabetInput" placeholder="a, b">
+        </div>
+        <div class="input-group">
+          <label for="startInput">Start State</label>
+          <input type="text" id="startInput" placeholder="q0">
+        </div>
+        <div class="input-group">
+          <label for="acceptInput">Accept States <span class="hint">(comma-separated)</span></label>
+          <input type="text" id="acceptInput" placeholder="q2">
+        </div>
+      </div>
+
+      <button class="btn btn-secondary" id="genTableBtn" onclick="app.generateNFATable()">Generate Transition Table</button>
+
+      <div id="nfaTransTableWrap" style="display:none">
+        <h3>NFA Transition Table</h3>
+        <p class="table-hint">Enter destination states. For multiple targets, use comma-separated values (e.g. q0,q1). Leave blank for no transition.</p>
+        <div class="table-wrapper">
+          <table id="nfaTransTable">
+            <thead id="nfaTransHead"></thead>
+            <tbody id="nfaTransBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" id="convertBtn" onclick="app.startConversion()" style="display:none">Convert to DFA</button>
+    </section>
+
+    <!-- Visualization Section -->
+    <section class="viz-section" id="vizSection" style="display:none;">
+      <div class="graphs-container">
+        <div class="graph-panel" id="nfaPanel">
+          <h3>NFA (Original)</h3>
+          <div class="graph-wrapper" id="nfaCanvasWrap">
+            <canvas id="nfaCanvas"></canvas>
+            <span class="zoom-hint">Scroll to zoom, drag to pan</span>
+          </div>
+        </div>
+        <div class="graph-panel" id="dfaPanel">
+          <h3>DFA (Constructed)</h3>
+          <div class="graph-wrapper" id="dfaCanvasWrap">
+            <canvas id="dfaCanvas"></canvas>
+            <span class="zoom-hint">Scroll to zoom, drag to pan</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step Controls -->
+      <div class="controls-section">
+        <div class="step-info" id="stepInfo">
+          <div class="step-description" id="stepDescription">Click Next to begin.</div>
+          <div class="step-detail" id="stepDetail"></div>
+        </div>
+        <div class="controls-bar">
+          <button class="btn btn-control" id="prevBtn" onclick="app.prev()" title="Previous Step">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            Prev
+          </button>
+          <button class="btn btn-control btn-play" id="playBtn" onclick="app.togglePlay()" title="Play / Pause">
+            <svg id="playIcon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"/></svg>
+            <svg id="pauseIcon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="5" y="3" width="4" height="18"/><rect x="15" y="3" width="4" height="18"/></svg>
+          </button>
+          <button class="btn btn-control" id="nextBtn" onclick="app.next()" title="Next Step">
+            Next
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </button>
+          <span class="step-counter" id="stepCounter">0 / 0</span>
+        </div>
+      </div>
+
+      <!-- DFA Transition Table -->
+      <div class="table-section" id="tableSection">
+        <h3>DFA Transition Table</h3>
+        <div class="table-wrapper">
+          <table id="dfaTable">
+            <thead id="dfaTableHead"></thead>
+            <tbody id="dfaTableBody"></tbody>
+          </table>
+        </div>
+        <div class="legend">
+          <span class="legend-item"><span class="legend-dot legend-start"></span> Start State</span>
+          <span class="legend-item"><span class="legend-dot legend-accept"></span> Accept State</span>
+          <span class="legend-item"><span class="legend-dot legend-current"></span> Current Step</span>
+          <span class="legend-item"><span class="legend-dot legend-dead"></span> Dead State</span>
+        </div>
+      </div>
+
+      <!-- Minimize Button -->
+      <div class="minimize-trigger" id="minimizeTrigger" style="display:none">
+        <button class="btn btn-primary" onclick="app.minimizeDFA()">Minimize DFA</button>
+      </div>
+
+      <!-- Minimization Section -->
+      <div id="minSection" style="display:none">
+        <div class="section-divider">
+          <h2 class="section-title">DFA Minimization</h2>
+          <p class="section-subtitle">Equivalent states merged using partition refinement</p>
+        </div>
+
+        <div class="graphs-container">
+          <div class="graph-panel">
+            <h3>DFA (Before Minimization)</h3>
+            <div class="graph-wrapper" id="dfaOrigCanvasWrap">
+              <canvas id="dfaOrigCanvas"></canvas>
+              <span class="zoom-hint">Scroll to zoom, drag to pan</span>
+            </div>
+          </div>
+          <div class="graph-panel">
+            <h3>DFA (Minimized)</h3>
+            <div class="graph-wrapper" id="dfaMinCanvasWrap">
+              <canvas id="dfaMinCanvas"></canvas>
+              <span class="zoom-hint">Scroll to zoom, drag to pan</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-section">
+          <h3>Minimized DFA Transition Table</h3>
+          <div class="table-wrapper">
+            <table id="minDfaTable">
+              <thead id="minDfaTableHead"></thead>
+              <tbody id="minDfaTableBody"></tbody>
+            </table>
+          </div>
+          <div class="legend">
+            <span class="legend-item"><span class="legend-dot legend-start"></span> Start State</span>
+            <span class="legend-item"><span class="legend-dot legend-accept"></span> Accept State</span>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn btn-ghost btn-reset" onclick="app.reset()">Reset &amp; Enter New NFA</button>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
