@@ -68,6 +68,7 @@
     const dfaTransitions = [];
     const stateMap = new Map();
     let counter = 0;
+    let stepNum = 0;
 
     function stateKey(set) { return [...set].sort().join(','); }
     function setStr(set) { return '{' + [...set].sort().join(', ') + '}'; }
@@ -87,13 +88,91 @@
       return { id, isNew: true };
     }
 
-    steps.push({ desc: 'Starting subset construction. The original NFA is shown on the left.', detail: 'We begin by computing the epsilon-closure of the NFA start state.', snap: snap(), current: null, symbol: null, hlNfa: new Set(), hlTrans: null, tableRows: [] });
+    // Helper: trace epsilon-closure path for explanation
+    function traceEpsilonClosure(stateSet) {
+      const closure = new Set(stateSet);
+      const stack = [...stateSet];
+      const traceSteps = [];
+      traceSteps.push('Start with: ' + setStr(stateSet));
+      while (stack.length > 0) {
+        const s = stack.pop();
+        for (const t of nfa.transitions) {
+          if (t.from === s && t.symbol === 'eps' && !closure.has(t.to)) {
+            closure.add(t.to);
+            stack.push(t.to);
+            traceSteps.push(s + ' →ε→ ' + t.to + '  (added ' + t.to + ' to closure)');
+          }
+        }
+      }
+      if (traceSteps.length === 1) {
+        traceSteps.push('No ε-transitions found — closure is unchanged');
+      }
+      return { closure, traceSteps };
+    }
 
-    const startClosure = nfa.epsilonClosure(new Set([nfa.startState]));
-    const startRes = getOrCreate(startClosure);
+    // Helper: trace move() for explanation
+    function traceMove(stateSet, symbol) {
+      const result = new Set();
+      const traceSteps = [];
+      for (const s of stateSet) {
+        const targets = [];
+        for (const t of nfa.transitions) {
+          if (t.from === s && t.symbol === symbol) {
+            result.add(t.to);
+            targets.push(t.to);
+          }
+        }
+        if (targets.length > 0) {
+          traceSteps.push('δ(' + s + ', ' + symbol + ') = {' + targets.join(', ') + '}');
+        } else {
+          traceSteps.push('δ(' + s + ', ' + symbol + ') = ∅  (no transition)');
+        }
+      }
+      return { result, traceSteps };
+    }
+
+    // Step 0: Introduction
+    stepNum++;
     steps.push({
-      desc: 'eps-closure({' + nfa.startState + '}) = ' + setStr(startClosure),
-      detail: 'This becomes DFA state ' + startRes.id + (dfaStates[0].isAccept ? ' (accepting).' : '.'),
+      stepType: 'init',
+      stepNumber: stepNum,
+      title: 'Initialize Subset Construction',
+      points: [
+        { icon: 'info', text: 'The subset construction algorithm converts an NFA to an equivalent DFA.' },
+        { icon: 'algo', text: 'Key idea: Each DFA state represents a set (subset) of NFA states.' },
+        { icon: 'note', text: 'NFA has ' + nfa.states.length + ' states: ' + setStr(new Set(nfa.states)) + ', alphabet: {' + nfa.alphabet.join(', ') + '}' },
+        { icon: 'next', text: 'First, we compute the ε-closure of the start state ' + nfa.startState + '.' }
+      ],
+      desc: 'Starting subset construction.',
+      detail: '',
+      snap: snap(), current: null, symbol: null, hlNfa: new Set(), hlTrans: null, tableRows: []
+    });
+
+    // Step 1: Epsilon-closure of start state
+    const startTrace = traceEpsilonClosure(new Set([nfa.startState]));
+    const startClosure = startTrace.closure;
+    const startRes = getOrCreate(startClosure);
+
+    stepNum++;
+    const startPoints = [
+      { icon: 'formula', text: 'ε-closure({' + nfa.startState + '}) = ' + setStr(startClosure) },
+    ];
+    for (const ts of startTrace.traceSteps) {
+      startPoints.push({ icon: 'trace', text: ts });
+    }
+    startPoints.push({ icon: 'result', text: 'Creates DFA state ' + startRes.id + ' = ' + setStr(startClosure) });
+    if (dfaStates[0].isAccept) {
+      startPoints.push({ icon: 'accept', text: startRes.id + ' contains accept state(s) → marked as accepting' });
+    }
+    startPoints.push({ icon: 'queue', text: 'Worklist: [' + startRes.id + '] — we must process this state next.' });
+
+    steps.push({
+      stepType: 'epsilon',
+      stepNumber: stepNum,
+      title: 'ε-Closure of Start State',
+      points: startPoints,
+      desc: 'ε-closure({' + nfa.startState + '}) = ' + setStr(startClosure),
+      detail: 'DFA state ' + startRes.id + (dfaStates[0].isAccept ? ' (accepting)' : ''),
       snap: snap(), current: startRes.id, symbol: null, hlNfa: new Set(startClosure), hlTrans: null,
       tableRows: buildTable(dfaStates, dfaTransitions, nfa.alphabet, startRes.id, null)
     });
@@ -105,26 +184,109 @@
       const ds = dfaStates[idx];
       if (processed.has(ds.id)) continue;
       processed.add(ds.id);
+
+      // Add a "processing state" step
+      stepNum++;
+      const remaining = queue.map(i => dfaStates[i].id).filter(id => !processed.has(id));
+      steps.push({
+        stepType: 'process',
+        stepNumber: stepNum,
+        title: 'Processing DFA State ' + ds.id,
+        points: [
+          { icon: 'state', text: ds.id + ' = ' + setStr(ds.nfaStates) },
+          { icon: 'algo', text: 'For each input symbol, compute move() then ε-closure() to find transitions.' },
+          { icon: 'queue', text: 'Remaining unprocessed states: ' + (remaining.length > 0 ? '[' + remaining.join(', ') + ']' : 'none') },
+          { icon: 'next', text: 'Will compute transitions for symbols: ' + nfa.alphabet.join(', ') }
+        ],
+        desc: 'Processing ' + ds.id + ' = ' + setStr(ds.nfaStates),
+        detail: 'Computing transitions for each input symbol.',
+        snap: snap(), current: ds.id, symbol: null, hlNfa: new Set(ds.nfaStates), hlTrans: null,
+        tableRows: buildTable(dfaStates, dfaTransitions, nfa.alphabet, ds.id, null)
+      });
+
       for (const sym of nfa.alphabet) {
-        const moveRes = nfa.move(ds.nfaStates, sym);
-        const closure = nfa.epsilonClosure(moveRes);
+        // Trace the move
+        const moveTrace = traceMove(ds.nfaStates, sym);
+        const moveRes = moveTrace.result;
+        // Trace the epsilon-closure
+        const closureTrace = traceEpsilonClosure(moveRes);
+        const closure = closureTrace.closure;
         const res = getOrCreate(closure);
         if (res.isNew) queue.push(dfaStates.length - 1);
         dfaTransitions.push({ from: ds.id, to: res.id, symbol: sym });
         const target = dfaStates.find(s => s.id === res.id);
+
+        stepNum++;
+        const transPoints = [
+          { icon: 'formula', text: 'Computing δ(' + ds.id + ', ' + sym + ')  where ' + ds.id + ' = ' + setStr(ds.nfaStates) }
+        ];
+
+        // Step A: move() breakdown
+        transPoints.push({ icon: 'step', text: 'Step A — move(' + setStr(ds.nfaStates) + ', ' + sym + '):' });
+        for (const ts of moveTrace.traceSteps) {
+          transPoints.push({ icon: 'trace', text: ts });
+        }
+        transPoints.push({ icon: 'result', text: 'move result = ' + setStr(moveRes) });
+
+        // Step B: epsilon-closure breakdown
+        transPoints.push({ icon: 'step', text: 'Step B — ε-closure(' + setStr(moveRes) + '):' });
+        for (const ts of closureTrace.traceSteps) {
+          transPoints.push({ icon: 'trace', text: ts });
+        }
+        transPoints.push({ icon: 'result', text: 'ε-closure result = ' + setStr(closure) });
+
+        // Step C: result
+        if (closure.size === 0) {
+          transPoints.push({ icon: 'dead', text: 'Empty set → Dead state (' + res.id + '). No NFA states reachable.' });
+        } else if (res.isNew) {
+          transPoints.push({ icon: 'new', text: 'New DFA state ' + res.id + ' = ' + setStr(closure) + ' discovered!' });
+          if (target.isAccept) {
+            transPoints.push({ icon: 'accept', text: res.id + ' contains accept state(s) → marked as accepting' });
+          }
+        } else {
+          transPoints.push({ icon: 'existing', text: setStr(closure) + ' already exists as ' + res.id + ' — reusing.' });
+        }
+        transPoints.push({ icon: 'transition', text: 'Add transition: ' + ds.id + ' —' + sym + '→ ' + res.id });
+
         steps.push({
-          desc: 'delta(' + ds.id + ', ' + sym + '): move(' + setStr(ds.nfaStates) + ', ' + sym + ') = ' + setStr(moveRes),
-          detail: 'eps-closure(' + setStr(moveRes) + ') = ' + setStr(closure) + ' = ' + res.id +
-            (res.isNew ? ' [NEW]' : '') + (target.isDead ? ' (dead state)' : '') + (target.isAccept ? ' (accepting)' : ''),
+          stepType: 'transition',
+          stepNumber: stepNum,
+          title: 'Transition: δ(' + ds.id + ', ' + sym + ') → ' + res.id,
+          points: transPoints,
+          desc: 'δ(' + ds.id + ', ' + sym + '): move(' + setStr(ds.nfaStates) + ', ' + sym + ') = ' + setStr(moveRes),
+          detail: 'ε-closure(' + setStr(moveRes) + ') = ' + setStr(closure) + ' → ' + res.id +
+            (res.isNew ? ' [NEW]' : '') + (target.isDead ? ' (dead)' : '') + (target.isAccept ? ' (accepting)' : ''),
           snap: snap(), current: ds.id, symbol: sym, hlNfa: new Set(closure),
           hlTrans: { from: ds.id, to: res.id },
           tableRows: buildTable(dfaStates, dfaTransitions, nfa.alphabet, ds.id, sym)
         });
       }
     }
+
+    // Final step
+    stepNum++;
+    const finalAcceptStates = dfaStates.filter(s => s.isAccept).map(s => s.id);
+    const finalDeadStates = dfaStates.filter(s => s.isDead).map(s => s.id);
+    const finalPoints = [
+      { icon: 'done', text: 'All DFA states have been processed. No new states in the worklist.' },
+      { icon: 'result', text: 'Total DFA states: ' + dfaStates.length + '   |   Total transitions: ' + dfaTransitions.length },
+      { icon: 'state', text: 'Start state: ' + dfaStates[0].id + ' = ' + setStr(dfaStates[0].nfaStates) },
+    ];
+    if (finalAcceptStates.length > 0) {
+      finalPoints.push({ icon: 'accept', text: 'Accept states: ' + finalAcceptStates.join(', ') });
+    }
+    if (finalDeadStates.length > 0) {
+      finalPoints.push({ icon: 'dead', text: 'Dead states (trap): ' + finalDeadStates.join(', ') });
+    }
+    finalPoints.push({ icon: 'info', text: 'The resulting DFA recognizes the same language as the original NFA.' });
+
     steps.push({
+      stepType: 'complete',
+      stepNumber: stepNum,
+      title: 'Subset Construction Complete ✓',
+      points: finalPoints,
       desc: 'Subset construction complete.',
-      detail: 'The DFA has ' + dfaStates.length + ' states and ' + dfaTransitions.length + ' transitions.',
+      detail: 'DFA has ' + dfaStates.length + ' states and ' + dfaTransitions.length + ' transitions.',
       snap: snap(), current: null, symbol: null, hlNfa: new Set(), hlTrans: null,
       tableRows: buildTable(dfaStates, dfaTransitions, nfa.alphabet, null, null)
     });
@@ -605,6 +767,416 @@
     }
   }
 
+  // ==================== VISUAL NFA BUILDER ====================
+  class VisualNFABuilder {
+    constructor(canvasId) {
+      this.canvas = document.getElementById(canvasId);
+      this.ctx = this.canvas.getContext('2d');
+      this.nodes = [];
+      this.transitions = [];
+      this.nextStateNum = 0;
+      this.transform = { x: 0, y: 0, scale: 1 };
+      this.dragging = false;
+      this.dragNode = null;
+      this.panning = false;
+      this.lastMouse = { x: 0, y: 0 };
+      this.transitionMode = null;
+      this.mouseWorld = { x: 0, y: 0 };
+      this.dpr = window.devicePixelRatio || 1;
+      this.width = 0;
+      this.height = 0;
+      this.initialized = false;
+    }
+
+    init() {
+      if (this.initialized) return;
+      this.initialized = true;
+      this._setup();
+      this.resize();
+    }
+
+    _screenToWorld(clientX, clientY) {
+      const rect = this.canvas.getBoundingClientRect();
+      return {
+        x: (clientX - rect.left - this.transform.x) / this.transform.scale,
+        y: (clientY - rect.top - this.transform.y) / this.transform.scale
+      };
+    }
+
+    _hitNode(wx, wy) {
+      for (let i = this.nodes.length - 1; i >= 0; i--) {
+        const n = this.nodes[i];
+        const dx = n.x - wx, dy = n.y - wy;
+        if (dx * dx + dy * dy <= NODE_R * NODE_R) return n;
+      }
+      return null;
+    }
+
+    _setup() {
+      const c = this.canvas;
+      c.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        const w = this._screenToWorld(e.clientX, e.clientY);
+        const node = this._hitNode(w.x, w.y);
+        if (this.transitionMode) { this.transitionMode = null; this.render(); return; }
+        if (node) this._showNodeMenu(e.clientX, e.clientY, node);
+        else this._showCanvasMenu(e.clientX, e.clientY, w);
+      });
+
+      c.addEventListener('wheel', e => {
+        e.preventDefault();
+        const rect = c.getBoundingClientRect();
+        const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        const zoom = e.deltaY < 0 ? 1.1 : 0.9;
+        this.transform.x = mx - (mx - this.transform.x) * zoom;
+        this.transform.y = my - (my - this.transform.y) * zoom;
+        this.transform.scale = Math.max(0.2, Math.min(4, this.transform.scale * zoom));
+        this.render();
+      }, { passive: false });
+
+      c.addEventListener('mousedown', e => {
+        if (e.button !== 0) return;
+        const w = this._screenToWorld(e.clientX, e.clientY);
+        const node = this._hitNode(w.x, w.y);
+        if (this.transitionMode) {
+          if (node) this._askSymbol(this.transitionMode.fromId, node.id);
+          this.transitionMode = null;
+          this.render();
+          return;
+        }
+        if (node) { this.dragNode = node; this.dragging = true; }
+        else { this.panning = true; }
+        this.lastMouse = { x: e.clientX, y: e.clientY };
+      });
+
+      c.addEventListener('mousemove', e => {
+        this.mouseWorld = this._screenToWorld(e.clientX, e.clientY);
+        if (this.dragging && this.dragNode) {
+          this.dragNode.x = this.mouseWorld.x;
+          this.dragNode.y = this.mouseWorld.y;
+          this.render(); this._updateInfo();
+        } else if (this.panning) {
+          this.transform.x += e.clientX - this.lastMouse.x;
+          this.transform.y += e.clientY - this.lastMouse.y;
+          this.lastMouse = { x: e.clientX, y: e.clientY };
+          this.render();
+        } else if (this.transitionMode) {
+          this.render();
+        }
+      });
+
+      c.addEventListener('mouseup', () => { this.dragging = false; this.dragNode = null; this.panning = false; });
+      c.addEventListener('mouseleave', () => { this.dragging = false; this.dragNode = null; this.panning = false; });
+      window.addEventListener('resize', () => { if (this.canvas.offsetParent) this.resize(); });
+
+      document.addEventListener('click', e => {
+        const menu = document.getElementById('ctxMenu');
+        if (menu && !menu.contains(e.target)) menu.style.display = 'none';
+      });
+    }
+
+    _showNodeMenu(cx, cy, node) {
+      const menu = document.getElementById('ctxMenu');
+      menu.innerHTML = '';
+      menu.style.display = 'block';
+      menu.style.left = cx + 'px';
+      menu.style.top = cy + 'px';
+
+      const items = [
+        { label: (node.isStart ? '✓ ' : '') + 'Start State', action: () => this.setStartState(node.id) },
+        { label: (node.isAccept ? '✓ ' : '') + 'Accept State', action: () => this.toggleAccept(node.id) },
+        { label: 'Add Transition from ' + node.id, action: () => { this.transitionMode = { fromId: node.id }; this.render(); } },
+        { sep: true },
+        { label: 'Delete ' + node.id, action: () => this.removeNode(node.id), danger: true }
+      ];
+
+      const outgoing = this.transitions.filter(t => t.from === node.id);
+      if (outgoing.length > 0) {
+        items.push({ sep: true });
+        for (const t of outgoing)
+          items.push({ label: 'Delete: ' + t.from + ' \u2014' + t.symbol + '\u2192 ' + t.to, action: () => this.removeTransition(t), danger: true });
+      }
+
+      for (const it of items) {
+        if (it.sep) { const s = document.createElement('div'); s.className = 'ctx-separator'; menu.appendChild(s); continue; }
+        const el = document.createElement('div');
+        el.className = 'ctx-item' + (it.danger ? ' ctx-danger' : '');
+        el.textContent = it.label;
+        el.addEventListener('click', () => { menu.style.display = 'none'; it.action(); });
+        menu.appendChild(el);
+      }
+    }
+
+    _showCanvasMenu(cx, cy, worldPos) {
+      const menu = document.getElementById('ctxMenu');
+      menu.innerHTML = '';
+      menu.style.display = 'block';
+      menu.style.left = cx + 'px';
+      menu.style.top = cy + 'px';
+      const el = document.createElement('div');
+      el.className = 'ctx-item';
+      el.textContent = 'Add State (q' + this.nextStateNum + ')';
+      el.addEventListener('click', () => { menu.style.display = 'none'; this.addNode(worldPos.x, worldPos.y); });
+      menu.appendChild(el);
+    }
+
+    _askSymbol(fromId, toId) {
+      const overlay = document.getElementById('symbolOverlay');
+      const input = document.getElementById('symbolInput');
+      overlay.style.display = 'flex';
+      input.value = '';
+      setTimeout(() => input.focus(), 50);
+
+      const cleanup = () => {
+        overlay.style.display = 'none';
+        document.getElementById('symbolOk').onclick = null;
+        document.getElementById('symbolCancel').onclick = null;
+        document.getElementById('symbolEpsilon').onclick = null;
+        input.onkeydown = null;
+      };
+      const submit = () => {
+        const v = input.value.trim();
+        if (v) {
+          const symbols = v.split(',').map(s => s.trim()).filter(Boolean);
+          for (const sym of symbols) this.addTransition(fromId, toId, sym);
+        }
+        cleanup();
+      };
+      const submitEps = () => { this.addTransition(fromId, toId, '\u03b5'); cleanup(); };
+
+      document.getElementById('symbolOk').onclick = submit;
+      document.getElementById('symbolCancel').onclick = cleanup;
+      document.getElementById('symbolEpsilon').onclick = submitEps;
+      input.onkeydown = e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') cleanup(); };
+    }
+
+    addNode(x, y) {
+      const id = 'q' + this.nextStateNum++;
+      this.nodes.push({ id, x, y, isStart: this.nodes.length === 0, isAccept: false });
+      this.render();
+      this._updateInfo();
+    }
+
+    removeNode(id) {
+      this.nodes = this.nodes.filter(n => n.id !== id);
+      this.transitions = this.transitions.filter(t => t.from !== id && t.to !== id);
+      if (!this.nodes.some(n => n.isStart) && this.nodes.length > 0) this.nodes[0].isStart = true;
+      this.render();
+      this._updateInfo();
+    }
+
+    setStartState(id) {
+      this.nodes.forEach(n => { n.isStart = n.id === id; });
+      this.render();
+      this._updateInfo();
+    }
+
+    toggleAccept(id) {
+      const node = this.nodes.find(n => n.id === id);
+      if (node) node.isAccept = !node.isAccept;
+      this.render();
+      this._updateInfo();
+    }
+
+    addTransition(from, to, symbol) {
+      if (!this.transitions.some(t => t.from === from && t.to === to && t.symbol === symbol)) {
+        this.transitions.push({ from, to, symbol });
+      }
+      this.render();
+      this._updateInfo();
+    }
+
+    removeTransition(trans) {
+      this.transitions = this.transitions.filter(t => t !== trans);
+      this.render();
+      this._updateInfo();
+    }
+
+    resetBuilder() {
+      this.nodes = [];
+      this.transitions = [];
+      this.nextStateNum = 0;
+      this.transitionMode = null;
+      this.transform = { x: 0, y: 0, scale: 1 };
+      this.render();
+      this._updateInfo();
+    }
+
+    resize() {
+      const wrap = this.canvas.parentElement;
+      if (!wrap) return;
+      const rect = wrap.getBoundingClientRect();
+      this.width = rect.width;
+      this.height = rect.height;
+      this.canvas.width = rect.width * this.dpr;
+      this.canvas.height = rect.height * this.dpr;
+      this.canvas.style.width = rect.width + 'px';
+      this.canvas.style.height = rect.height + 'px';
+      this.render();
+    }
+
+    _updateInfo() {
+      const el = document.getElementById('visualNfaInfo');
+      if (this.nodes.length === 0) { el.classList.remove('visible'); return; }
+      el.classList.add('visible');
+      const states = this.nodes.map(n => n.id).join(', ');
+      const alphaSet = new Set();
+      for (const t of this.transitions) if (t.symbol !== '\u03b5') alphaSet.add(t.symbol);
+      const alpha = [...alphaSet].sort().join(', ') || '(none)';
+      const start = this.nodes.find(n => n.isStart)?.id || '(none)';
+      const accept = this.nodes.filter(n => n.isAccept).map(n => n.id).join(', ') || '(none)';
+      const transStr = this.transitions.map(t => '\u03b4(' + t.from + ', ' + t.symbol + ') \u2192 ' + t.to).join(' &nbsp;|&nbsp; ') || '(none)';
+      el.innerHTML = '<strong class="nfa-label">Q</strong> = {' + states + '} &nbsp;&nbsp; '
+        + '<strong class="nfa-label">\u03a3</strong> = {' + alpha + '} &nbsp;&nbsp; '
+        + '<strong class="nfa-label">q\u2080</strong> = ' + start + ' &nbsp;&nbsp; '
+        + '<strong class="nfa-label">F</strong> = {' + accept + '}<br>'
+        + '<strong class="nfa-label">\u03b4</strong>: ' + transStr;
+    }
+
+    extractNFA() {
+      if (this.nodes.length === 0) { alert('Please add at least one state.'); return null; }
+      const startNode = this.nodes.find(n => n.isStart);
+      if (!startNode) { alert('Please set a start state.'); return null; }
+      if (!this.nodes.some(n => n.isAccept)) { alert('Please set at least one accept state.'); return null; }
+      const states = this.nodes.map(n => n.id);
+      const alphaSet = new Set();
+      const transitions = [];
+      for (const t of this.transitions) {
+        if (t.symbol === '\u03b5') transitions.push({ from: t.from, symbol: 'eps', to: t.to });
+        else { alphaSet.add(t.symbol); transitions.push({ from: t.from, symbol: t.symbol, to: t.to }); }
+      }
+      const alphabet = [...alphaSet].sort();
+      if (alphabet.length === 0) { alert('Add at least one non-epsilon transition.'); return null; }
+      return new NFA(states, alphabet, transitions, startNode.id, this.nodes.filter(n => n.isAccept).map(n => n.id));
+    }
+
+    render() {
+      const ctx = this.ctx, dpr = this.dpr;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      ctx.fillStyle = COLORS.bg;
+      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+      if (this.nodes.length === 0) {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.fillStyle = COLORS.textDim;
+        ctx.font = '15px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Right-click to add states', this.width / 2, this.height / 2 - 10);
+        ctx.font = '12px Inter, sans-serif';
+        ctx.fillText('Build your NFA visually', this.width / 2, this.height / 2 + 14);
+        return;
+      }
+
+      ctx.setTransform(dpr * this.transform.scale, 0, 0, dpr * this.transform.scale,
+        dpr * this.transform.x, dpr * this.transform.y);
+
+      this._drawEdges(ctx);
+      this._drawTransitionPreview(ctx);
+      this._drawNodes(ctx);
+    }
+
+    _groupEdges() {
+      const map = new Map();
+      for (const t of this.transitions) {
+        const key = t.from + '->' + t.to;
+        if (!map.has(key)) map.set(key, { from: t.from, to: t.to, labels: [] });
+        const labels = map.get(key).labels;
+        if (!labels.includes(t.symbol)) labels.push(t.symbol);
+      }
+      return map;
+    }
+
+    _drawEdges(ctx) {
+      const edgeMap = this._groupEdges();
+      const startNode = this.nodes.find(n => n.isStart);
+      if (startNode) {
+        ctx.beginPath();
+        ctx.moveTo(startNode.x - NODE_R - 55, startNode.y);
+        ctx.lineTo(startNode.x - NODE_R - 2, startNode.y);
+        ctx.strokeStyle = COLORS.startArrow; ctx.lineWidth = 2.5; ctx.stroke();
+        this._arrowhead(ctx, startNode.x - NODE_R - 2, startNode.y, 0, 12, COLORS.startArrow);
+      }
+      for (const [, edge] of edgeMap) {
+        const fn = this.nodes.find(n => n.id === edge.from), tn = this.nodes.find(n => n.id === edge.to);
+        if (!fn || !tn) continue;
+        const label = edge.labels.join(' | ');
+        if (edge.from === edge.to) this._drawSelfLoop(ctx, fn.x, fn.y, label, COLORS.edge, 2);
+        else {
+          const revKey = edge.to + '->' + edge.from;
+          this._drawCurvedEdge(ctx, fn, tn, label, edgeMap.has(revKey) ? 38 : 0, COLORS.edge, 2);
+        }
+      }
+    }
+
+    _drawCurvedEdge(ctx, from, to, label, curveAmt, color, lw) {
+      const dx = to.x - from.x, dy = to.y - from.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 1) return;
+      const px = -dy / dist, py = dx / dist;
+      const mx = (from.x + to.x) / 2 + px * curveAmt, my = (from.y + to.y) / 2 + py * curveAmt;
+      const acx = mx - from.x, acy = my - from.y, acd = Math.sqrt(acx * acx + acy * acy);
+      const sx = from.x + NODE_R * acx / acd, sy = from.y + NODE_R * acy / acd;
+      const bcx = mx - to.x, bcy = my - to.y, bcd = Math.sqrt(bcx * bcx + bcy * bcy);
+      const ex = to.x + NODE_R * bcx / bcd, ey = to.y + NODE_R * bcy / bcd;
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.quadraticCurveTo(mx, my, ex, ey);
+      ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.stroke();
+      this._arrowhead(ctx, ex, ey, Math.atan2(ey - my, ex - mx), 13, color);
+      this._edgeLabel(ctx, label, (sx + 2 * mx + ex) / 4, (sy + 2 * my + ey) / 4);
+    }
+
+    _drawSelfLoop(ctx, x, y, label, color, lw) {
+      const lr = 26;
+      const sa = -Math.PI / 2 - Math.PI / 5, ea = -Math.PI / 2 + Math.PI / 5;
+      const sx = x + NODE_R * Math.cos(sa), sy = y + NODE_R * Math.sin(sa);
+      const ex = x + NODE_R * Math.cos(ea), ey = y + NODE_R * Math.sin(ea);
+      const cp1x = x - lr * 2, cp1y = y - NODE_R - lr * 3, cp2x = x + lr * 2, cp2y = y - NODE_R - lr * 3;
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, ex, ey);
+      ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.stroke();
+      this._arrowhead(ctx, ex, ey, Math.atan2(ey - cp2y, ex - cp2x), 13, color);
+      this._edgeLabel(ctx, label, x, y - NODE_R - lr * 2.5);
+    }
+
+    _arrowhead(ctx, tipX, tipY, angle, size, color) {
+      ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(tipX, tipY);
+      ctx.lineTo(tipX - size * Math.cos(angle - 0.45), tipY - size * Math.sin(angle - 0.45));
+      ctx.lineTo(tipX - size * Math.cos(angle + 0.45), tipY - size * Math.sin(angle + 0.45));
+      ctx.closePath(); ctx.fill();
+    }
+
+    _edgeLabel(ctx, text, x, y) {
+      ctx.font = '600 14px JetBrains Mono, monospace';
+      const tw = ctx.measureText(text).width + 14;
+      ctx.fillStyle = COLORS.labelBg; ctx.beginPath(); ctx.roundRect(x - tw / 2, y - 11, tw, 22, 4); ctx.fill();
+      ctx.fillStyle = COLORS.text; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, x, y);
+    }
+
+    _drawTransitionPreview(ctx) {
+      if (!this.transitionMode) return;
+      const fn = this.nodes.find(n => n.id === this.transitionMode.fromId);
+      if (!fn) return;
+      ctx.beginPath(); ctx.moveTo(fn.x, fn.y); ctx.lineTo(this.mouseWorld.x, this.mouseWorld.y);
+      ctx.strokeStyle = COLORS.amber; ctx.lineWidth = 2; ctx.setLineDash([8, 4]); ctx.stroke(); ctx.setLineDash([]);
+    }
+
+    _drawNodes(ctx) {
+      for (const node of this.nodes) {
+        let fill = COLORS.nodeFill, stroke = COLORS.nodeStroke;
+        if (node.isAccept) stroke = COLORS.acceptStroke;
+        if (node.isStart) stroke = COLORS.startStroke;
+        ctx.beginPath(); ctx.arc(node.x, node.y, NODE_R, 0, 2 * Math.PI);
+        ctx.fillStyle = fill; ctx.fill();
+        ctx.strokeStyle = stroke; ctx.lineWidth = 2.5; ctx.setLineDash([]); ctx.stroke();
+        if (node.isAccept) {
+          ctx.beginPath(); ctx.arc(node.x, node.y, NODE_R - 6, 0, 2 * Math.PI);
+          ctx.strokeStyle = COLORS.acceptStroke; ctx.lineWidth = 2.5; ctx.stroke();
+        }
+        ctx.fillStyle = COLORS.text; ctx.font = '600 16px JetBrains Mono, monospace';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(node.id, node.x, node.y);
+      }
+    }
+  }
+
   // ==================== APPLICATION ====================
   class App {
     constructor() {
@@ -615,6 +1187,38 @@
       this.playTimer = null;
       this.nfaGraph = null;
       this.dfaGraph = null;
+      this.visualBuilder = null;
+      this.inputMode = 'table';
+    }
+
+    switchMode(mode) {
+      this.inputMode = mode;
+      document.getElementById('tableModePanel').style.display = mode === 'table' ? '' : 'none';
+      document.getElementById('visualModePanel').style.display = mode === 'visual' ? '' : 'none';
+      document.getElementById('tableModeBtn').classList.toggle('active', mode === 'table');
+      document.getElementById('visualModeBtn').classList.toggle('active', mode === 'visual');
+      if (mode === 'visual') {
+        if (!this.visualBuilder) {
+          this.visualBuilder = new VisualNFABuilder('nfaBuilderCanvas');
+        }
+        this.visualBuilder.init();
+        setTimeout(() => this.visualBuilder.resize(), 50);
+      }
+    }
+
+    convertVisualNFA() {
+      if (!this.visualBuilder) return;
+      const nfa = this.visualBuilder.extractNFA();
+      if (!nfa) return;
+      this.nfa = nfa;
+      this.steps = subsetConstruct(nfa);
+      this.currentStep = 0;
+      this.playing = false;
+      document.getElementById('inputSection').style.display = 'none';
+      document.getElementById('vizSection').style.display = '';
+      this.nfaGraph = new CanvasGraph('nfaCanvas');
+      this.dfaGraph = new CanvasGraph('dfaCanvas');
+      this.renderStep();
     }
 
     loadExample(idx) {
@@ -733,8 +1337,6 @@
 
     renderStep() {
       const step = this.steps[this.currentStep];
-      document.getElementById('stepDescription').textContent = step.desc;
-      document.getElementById('stepDetail').textContent = step.detail || '';
       document.getElementById('stepCounter').textContent = (this.currentStep + 1) + ' / ' + this.steps.length;
       document.getElementById('prevBtn').disabled = this.currentStep === 0;
       document.getElementById('nextBtn').disabled = this.currentStep === this.steps.length - 1;
@@ -742,6 +1344,9 @@
       // Show minimize button only at final step
       const isFinal = this.currentStep === this.steps.length - 1;
       document.getElementById('minimizeTrigger').style.display = isFinal ? '' : 'none';
+
+      // Render the rich step explanation
+      this._renderStepExplanation(step);
 
       // NFA
       this.renderNFA(step.hlNfa);
@@ -768,6 +1373,71 @@
       });
 
       renderDFATable(step.tableRows, this.nfa.alphabet);
+    }
+
+    _renderStepExplanation(step) {
+      const container = document.getElementById('stepInfo');
+      const ICONS = {
+        info: '💡', algo: '⚙️', note: '📋', next: '➡️', formula: '📐',
+        trace: '　↳', result: '✅', accept: '⭐', queue: '📦',
+        state: '🔵', step: '📌', dead: '💀', new: '🆕', existing: '♻️',
+        transition: '↗️', done: '🏁'
+      };
+      const TYPE_LABELS = {
+        init: 'INITIALIZE', epsilon: 'ε-CLOSURE', process: 'PROCESSING',
+        transition: 'TRANSITION', complete: 'COMPLETE'
+      };
+      const TYPE_COLORS = {
+        init: 'var(--accent)', epsilon: 'var(--amber)',
+        process: '#8B8BDA', transition: 'var(--green)', complete: 'var(--accent)'
+      };
+
+      let html = '';
+
+      // Step badge + title
+      const badgeColor = TYPE_COLORS[step.stepType] || 'var(--accent)';
+      const badgeLabel = TYPE_LABELS[step.stepType] || '';
+      html += '<div class="step-header">';
+      html += '<span class="step-badge" style="background:' + badgeColor + '20;color:' + badgeColor + ';border:1px solid ' + badgeColor + '40">' + badgeLabel + '</span>';
+      html += '<span class="step-number">Step ' + step.stepNumber + '</span>';
+      html += '</div>';
+      html += '<div class="step-title">' + step.title + '</div>';
+
+      // Points
+      if (step.points && step.points.length > 0) {
+        html += '<div class="step-points">';
+        for (const pt of step.points) {
+          const icon = ICONS[pt.icon] || '•';
+          const isSubStep = pt.icon === 'trace';
+          const isSection = pt.icon === 'step';
+          const isResult = pt.icon === 'result' || pt.icon === 'accept' || pt.icon === 'new' || pt.icon === 'existing' || pt.icon === 'dead' || pt.icon === 'transition' || pt.icon === 'done';
+          let cls = 'step-point';
+          if (isSubStep) cls += ' step-point-trace';
+          if (isSection) cls += ' step-point-section';
+          if (isResult) cls += ' step-point-result';
+          html += '<div class="' + cls + '">';
+          html += '<span class="step-icon">' + icon + '</span>';
+          html += '<span class="step-text">' + this._highlightSyntax(pt.text) + '</span>';
+          html += '</div>';
+        }
+        html += '</div>';
+      }
+
+      container.innerHTML = html;
+    }
+
+    _highlightSyntax(text) {
+      // Highlight set notation {q0, q1} etc.
+      let result = text.replace(/\{([^}]*)\}/g, '<span class="hl-set">{$1}</span>');
+      // Highlight state references like D0, D1, q0, q1
+      result = result.replace(/\b(D\d+)\b/g, '<span class="hl-dfa-state">$1</span>');
+      // Highlight symbols after arrows
+      result = result.replace(/—([a-zA-Z0-9])→/g, '—<span class="hl-symbol">$1</span>→');
+      // Highlight ε
+      result = result.replace(/ε/g, '<span class="hl-epsilon">ε</span>');
+      // Highlight [NEW]
+      result = result.replace(/\[NEW\]/g, '<span class="hl-new">[NEW]</span>');
+      return result;
     }
 
     minimizeDFA() {
@@ -849,6 +1519,10 @@
       document.getElementById('inputSection').style.display = '';
       document.getElementById('minSection').style.display = 'none';
       document.getElementById('minimizeTrigger').style.display = 'none';
+      // Restore the active mode panel
+      if (this.inputMode === 'visual' && this.visualBuilder) {
+        setTimeout(() => this.visualBuilder.resize(), 50);
+      }
     }
   }
 
