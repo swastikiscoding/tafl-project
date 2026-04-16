@@ -143,6 +143,11 @@
         { icon: 'note', text: 'NFA has ' + nfa.states.length + ' states: ' + setStr(new Set(nfa.states)) + ', alphabet: {' + nfa.alphabet.join(', ') + '}' },
         { icon: 'next', text: 'First, we compute the ε-closure of the start state ' + nfa.startState + '.' }
       ],
+      subsetBullets: [
+        'Start from the NFA transition table as the source.',
+        'Each DFA state corresponds to one subset of NFA states.',
+        'Begin with ε-closure of the NFA start state.'
+      ],
       desc: 'Starting subset construction.',
       detail: '',
       snap: snap(), current: null, symbol: null, hlNfa: new Set(), hlTrans: null, tableRows: []
@@ -171,6 +176,11 @@
       stepNumber: stepNum,
       title: 'ε-Closure of Start State',
       points: startPoints,
+      subsetBullets: [
+        'Compute ε-closure({' + nfa.startState + '}) = ' + setStr(startClosure),
+        'Create ' + startRes.id + ' for subset ' + setStr(startClosure),
+        'This subset is the first row source for DFA transitions.'
+      ],
       desc: 'ε-closure({' + nfa.startState + '}) = ' + setStr(startClosure),
       detail: 'DFA state ' + startRes.id + (dfaStates[0].isAccept ? ' (accepting)' : ''),
       snap: snap(), current: startRes.id, symbol: null, hlNfa: new Set(startClosure), hlTrans: null,
@@ -197,6 +207,11 @@
           { icon: 'algo', text: 'For each input symbol, compute move() then ε-closure() to find transitions.' },
           { icon: 'queue', text: 'Remaining unprocessed states: ' + (remaining.length > 0 ? '[' + remaining.join(', ') + ']' : 'none') },
           { icon: 'next', text: 'Will compute transitions for symbols: ' + nfa.alphabet.join(', ') }
+        ],
+        subsetBullets: [
+          'Current subset: ' + ds.id + ' = ' + setStr(ds.nfaStates),
+          'Read this subset against each symbol column in the NFA table.',
+          'For each symbol: move() then ε-closure() gives the target subset.'
         ],
         desc: 'Processing ' + ds.id + ' = ' + setStr(ds.nfaStates),
         detail: 'Computing transitions for each input symbol.',
@@ -253,6 +268,13 @@
           stepNumber: stepNum,
           title: 'Transition: δ(' + ds.id + ', ' + sym + ') → ' + res.id,
           points: transPoints,
+          subsetBullets: [
+            'Source subset: ' + ds.id + ' = ' + setStr(ds.nfaStates),
+            'On symbol ' + sym + ': move(' + setStr(ds.nfaStates) + ', ' + sym + ') = ' + setStr(moveRes),
+            'Then ε-closure(' + setStr(moveRes) + ') = ' + setStr(closure),
+            'Target subset maps to ' + res.id + (res.isNew ? ' (new state)' : ' (existing state)'),
+            'Add DFA transition: ' + ds.id + ' —' + sym + '→ ' + res.id
+          ],
           desc: 'δ(' + ds.id + ', ' + sym + '): move(' + setStr(ds.nfaStates) + ', ' + sym + ') = ' + setStr(moveRes),
           detail: 'ε-closure(' + setStr(moveRes) + ') = ' + setStr(closure) + ' → ' + res.id +
             (res.isNew ? ' [NEW]' : '') + (target.isDead ? ' (dead)' : '') + (target.isAccept ? ' (accepting)' : ''),
@@ -285,6 +307,11 @@
       stepNumber: stepNum,
       title: 'Subset Construction Complete ✓',
       points: finalPoints,
+      subsetBullets: [
+        'All subsets are discovered and all DFA table rows are complete.',
+        'Next, use the state/subset mapping table to view renamed DFA states.',
+        'Final DFA visualization is shown below this table flow.'
+      ],
       desc: 'Subset construction complete.',
       detail: 'DFA has ' + dfaStates.length + ' states and ' + dfaTransitions.length + ' transitions.',
       snap: snap(), current: null, symbol: null, hlNfa: new Set(), hlTrans: null,
@@ -637,6 +664,114 @@
         r.appendChild(td);
       }
       body.appendChild(r);
+    }
+  }
+
+  function renderNFASourceTable(nfa, highlightStates, highlightSymbol) {
+    const head = document.getElementById('nfaSourceHead');
+    const body = document.getElementById('nfaSourceBody');
+    if (!head || !body || !nfa) return;
+
+    head.innerHTML = '';
+    body.innerHTML = '';
+
+    const symbols = [...nfa.alphabet, 'eps'];
+    const headerRow = document.createElement('tr');
+    const firstHeader = document.createElement('th');
+    firstHeader.textContent = 'NFA State';
+    headerRow.appendChild(firstHeader);
+    for (const sym of symbols) {
+      const th = document.createElement('th');
+      th.textContent = sym === 'eps' ? 'δ(_, ε)' : 'δ(_, ' + sym + ')';
+      headerRow.appendChild(th);
+    }
+    head.appendChild(headerRow);
+
+    const activeRows = highlightStates || new Set();
+    for (const st of nfa.states) {
+      const tr = document.createElement('tr');
+      const rowIsActive = activeRows.has(st);
+      if (rowIsActive) tr.classList.add('source-highlight-row');
+
+      const stateCell = document.createElement('td');
+      stateCell.textContent = st;
+      tr.appendChild(stateCell);
+
+      for (const sym of symbols) {
+        const td = document.createElement('td');
+        const targets = nfa.transitions
+          .filter(t => t.from === st && t.symbol === sym)
+          .map(t => t.to);
+        const uniqueTargets = [...new Set(targets)].sort();
+        td.textContent = uniqueTargets.length > 0 ? '{' + uniqueTargets.join(', ') + '}' : '∅';
+        if (rowIsActive && highlightSymbol && highlightSymbol === sym) {
+          td.classList.add('source-highlight-cell');
+        }
+        tr.appendChild(td);
+      }
+      body.appendChild(tr);
+    }
+  }
+
+  function renderSubsetDetails(step) {
+    const list = document.getElementById('subsetList');
+    if (!list) return;
+    list.innerHTML = '';
+
+    const bullets = (step && step.subsetBullets && step.subsetBullets.length > 0)
+      ? step.subsetBullets
+      : ['No subset operation in this step.'];
+
+    for (const line of bullets) {
+      const li = document.createElement('li');
+      li.textContent = line;
+      list.appendChild(li);
+    }
+  }
+
+  function renderStateSubsetMap(states) {
+    const head = document.getElementById('stateMapHead');
+    const body = document.getElementById('stateMapBody');
+    if (!head || !body) return;
+
+    head.innerHTML = '';
+    body.innerHTML = '';
+
+    const hRow = document.createElement('tr');
+    ['DFA State', 'NFA Subset', 'Type'].forEach(h => {
+      const th = document.createElement('th');
+      th.textContent = h;
+      hRow.appendChild(th);
+    });
+    head.appendChild(hRow);
+
+    if (!states || states.length === 0) return;
+
+    for (const st of states) {
+      const tr = document.createElement('tr');
+
+      const cState = document.createElement('td');
+      let prefix = '';
+      if (st.isStart) prefix += '→ ';
+      if (st.isAccept) prefix += '* ';
+      cState.textContent = prefix + st.id;
+      tr.appendChild(cState);
+
+      const cSubset = document.createElement('td');
+      cSubset.textContent = '{' + [...st.nfaStates].sort().join(', ') + '}';
+      tr.appendChild(cSubset);
+
+      const cType = document.createElement('td');
+      if (st.isDead) {
+        cType.innerHTML = '<span class="state-tag dead">Dead</span>';
+      } else if (st.isAccept) {
+        cType.innerHTML = '<span class="state-tag accept">Accepting</span>';
+      } else {
+        cType.textContent = 'Normal';
+      }
+      tr.appendChild(cType);
+
+      body.appendChild(tr);
     }
   }
 
@@ -1347,12 +1482,24 @@
 
       // Render the rich step explanation
       this._renderStepExplanation(step);
+      renderSubsetDetails(step);
+
+      const snap = step.snap;
+      let sourceSubset = new Set();
+      if (step.current) {
+        const sourceState = snap.states.find(s => s.id === step.current);
+        if (sourceState) sourceSubset = new Set(sourceState.nfaStates);
+      }
+      const sourceSym = step.symbol || null;
+
+      renderNFASourceTable(this.nfa, sourceSubset, sourceSym);
+      renderDFATable(step.tableRows, this.nfa.alphabet);
+      renderStateSubsetMap(snap.states);
 
       // NFA
       this.renderNFA(step.hlNfa);
 
       // DFA
-      const snap = step.snap;
       const dfaIds = snap.states.map(s => s.id);
       const dfaAccept = new Set(snap.states.filter(s => s.isAccept).map(s => s.id));
       const dfaStart = snap.states.length > 0 ? snap.states[0].id : null;
@@ -1371,8 +1518,6 @@
         hlStates: hlDfa,
         hlTrans: step.hlTrans
       });
-
-      renderDFATable(step.tableRows, this.nfa.alphabet);
     }
 
     _renderStepExplanation(step) {

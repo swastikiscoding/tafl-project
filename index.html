@@ -94,20 +94,13 @@
 
     <!-- Visualization Section -->
     <section class="viz-section" id="vizSection" style="display:none;">
-      <div class="graphs-container">
-        <div class="graph-panel" id="nfaPanel">
-          <h3>NFA (Original)</h3>
-          <div class="graph-wrapper" id="nfaCanvasWrap">
-            <canvas id="nfaCanvas"></canvas>
-            <span class="zoom-hint">Scroll to zoom, drag to pan</span>
-          </div>
-        </div>
-        <div class="graph-panel" id="dfaPanel">
-          <h3>DFA (Constructed)</h3>
-          <div class="graph-wrapper" id="dfaCanvasWrap">
-            <canvas id="dfaCanvas"></canvas>
-            <span class="zoom-hint">Scroll to zoom, drag to pan</span>
-          </div>
+      <div class="table-section" id="nfaSourceSection">
+        <h3>NFA Transition Table (Source)</h3>
+        <div class="table-wrapper">
+          <table id="nfaSourceTable">
+            <thead id="nfaSourceHead"></thead>
+            <tbody id="nfaSourceBody"></tbody>
+          </table>
         </div>
       </div>
 
@@ -118,6 +111,10 @@
             <span class="step-badge" style="background:var(--accent)20;color:var(--accent);border:1px solid var(--accent)40">READY</span>
           </div>
           <div class="step-title">Click Next to begin the subset construction.</div>
+        </div>
+        <div class="subset-details" id="subsetDetails">
+          <h4>Subset Formation for This Step</h4>
+          <ul class="subset-list" id="subsetList"></ul>
         </div>
         <div class="controls-bar">
           <button class="btn btn-control" id="prevBtn" onclick="app.prev()" title="Previous Step">
@@ -138,7 +135,7 @@
 
       <!-- DFA Transition Table -->
       <div class="table-section" id="tableSection">
-        <h3>DFA Transition Table</h3>
+        <h3>DFA Transition Table (Built Step-by-Step)</h3>
         <div class="table-wrapper">
           <table id="dfaTable">
             <thead id="dfaTableHead"></thead>
@@ -150,6 +147,33 @@
           <span class="legend-item"><span class="legend-dot legend-accept"></span> Accept State</span>
           <span class="legend-item"><span class="legend-dot legend-current"></span> Current Step</span>
           <span class="legend-item"><span class="legend-dot legend-dead"></span> Dead State</span>
+        </div>
+      </div>
+
+      <div class="table-section" id="stateMapSection">
+        <h3>New DFA States with NFA Subsets</h3>
+        <div class="table-wrapper">
+          <table id="stateMapTable">
+            <thead id="stateMapHead"></thead>
+            <tbody id="stateMapBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="graphs-container" id="graphsBottomSection">
+        <div class="graph-panel" id="nfaPanel">
+          <h3>NFA (Original)</h3>
+          <div class="graph-wrapper" id="nfaCanvasWrap">
+            <canvas id="nfaCanvas"></canvas>
+            <span class="zoom-hint">Scroll to zoom, drag to pan</span>
+          </div>
+        </div>
+        <div class="graph-panel" id="dfaPanel">
+          <h3>DFA (Constructed)</h3>
+          <div class="graph-wrapper" id="dfaCanvasWrap">
+            <canvas id="dfaCanvas"></canvas>
+            <span class="zoom-hint">Scroll to zoom, drag to pan</span>
+          </div>
         </div>
       </div>
 
